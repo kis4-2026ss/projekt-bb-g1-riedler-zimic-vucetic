@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "vitest run"
   },
   "author": "",
   "license": "MIT",
@@ -14,5 +15,10 @@
     "express": "^4.21.1",
     "sequelize": "^6.37.5",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.9"
   }
 }
