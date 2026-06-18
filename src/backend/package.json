@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
   },
   "author": "",
   "license": "MIT",
