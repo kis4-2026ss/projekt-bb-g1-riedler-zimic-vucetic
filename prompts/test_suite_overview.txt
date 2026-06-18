@@ -1,0 +1,114 @@
+    1      🧪 Testsuite Übersicht - WishBox Backend
+    2
+    3     Dieses Dokument bietet eine Übersicht über die für das WishBox Backend implementierte Testsuite. Die
+          Testsuite wurde mit Jest und Supertest unter Verwendung von nativem ECMAScript Modules (ESM) Support
+          aufgebaut.
+    4
+    5     │ [!NOTE]
+    6     │ Um Seiteneffekte zwischen Testläufen zu vermeiden und die Geschwindigkeit zu maximieren, wird bei allen
+          │ Integrationstests eine isolierte In-Memory-Datenbank (SQLite) verwendet, die vor jedem Testfall neu
+          │ aufgesetzt und zurückgesetzt wird ( force: true ).
+          ──────
+   10     ## 🛠️ Test-Setup & Technologien
+   11
+   12     • Testframework: Jest https://jestjs.io/ (mit  --experimental-vm-modules  für ESM-Unterstützung).
+   13     • HTTP-Assertions (Integrationstests): Supertest https://github.com/ladjs/supertest zur Simulation von API-
+          Anfragen an das Express-App-Objekt.
+   14     • Datenbank: SQLite ( sqlite3 ) über Sequelize, betrieben im  :memory:  Modus für isoliertes, schnelles
+          Testen.
+          ──────
+   18     ## 📂 Teststruktur
+   19
+   20     Die Tests befinden sich in der Datei:
+
+   21     • app.test.mjs (direkt neben dem Quellcode unter  src/backend/app.mjs )
+   25     ## 📋 Übersicht der wichtigsten Testfälle
+   26
+   27     Insgesamt wurden 25 Testfälle implementiert, die in zwei Hauptkategorien unterteilt sind:
+   28
+   29     ### 1. Datenbank-Setup & Modelle ( Database Setup & Models )
+   30
+   31     Diese Unittests überprüfen die grundlegende Konfiguration der Sequelize-Datenbankverbindung, das Schema-
+          Mapping sowie die Seed-Logik.
+   32
+   33      Testfall                                  │ Kategorie │ Beschreibung
+          ───────────────────────────────────────────┼───────────┼──────────────────────────────────────────────────
+   35       createSequelize  (In-Memory)             │ Unit-Test │ Verifiziert, dass eine Sequelize-Instanz mit
+                                                     │           │ SQLite Dialekt und  :memory:  Storage korrekt
+                                                     │           │ erzeugt wird.
+   36       createSequelize  (File-based)            │ Unit-Test │ Prüft, ob bei Angabe eines Dateipfads der
+                                                     │           │ übergeordnete Ordner automatisch erstellt wird.
+   37       defineModels                             │ Unit-Test │ Stellt sicher, dass die Modelle  Wishlist  und
+                                                     │           │ Wish  registriert und die Relationen (
+                                                     │           │ Wishlist.hasMany(Wish)  und
+                                                     │           │ Wish.belongsTo(Wishlist) ) korrekt verknüpft
+                                                     │           │ sind.
+>  38       initializeDatabase  (Standard Seed)      │ Unit-Test │ Prüft, ob bei leerer Datenbank und aktiviertem
+                                                     │           │ Seeding ( seed: true ) die Standard-Einträge
+                                                     │           │ ("My Fancy Wishlist" mit "Leberkaassemmeln")
+                                                     │           │ angelegt werden.
+   39       initializeDatabase  (Ohne Seed)          │ Unit-Test │ Verifiziert, dass bei  seed: false  keine
+                                                     │           │ Standard-Einträge erstellt werden.
+   40       initializeDatabase  (Kein Überschreiben) │ Randfall  │ Stellt sicher, dass die Datenbank nicht neu
+                                                     │           │ geseet wird, wenn bereits Daten vorhanden sind,
+                                                     │           │ um Datenverlust zu vermeiden.
+   41
+   42     ### 2. REST API Routen ( API Endpoints )
+   43
+   44     Diese Integrationstests prüfen das Zusammenspiel aus Express-Routing, Controllern und der Datenbank. Alle
+          Endpunkte werden sowohl für Standard- als auch für Fehlerfälle abgedeckt.
+   45
+   46      HTTP-Methode & Route      │ Testfall     │ Beschreibung / Erwartung
+          ───────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────
+   48      POST  /wishlist           │ Standardfall │ Erstellt eine Wunschliste mit gültigem Titel und gibt 200 OK
+                                     │              │ + die Wunschliste inkl. ID zurück.
+   49      POST  /wishlist           │ Randfall     │ Erlaubt die Erstellung einer Wunschliste ohne Titel ( title:
+                                     │              │ undefined ), was vom Sequelize-Modell zugelassen wird.
+   50      GET  /wishlist            │ Standardfall │ Gibt alle Wunschlisten samt deren verknüpften Wünschen (
+                                     │              │ Wishes ) zurück (200 OK).
+>  51      GET  /wishlist            │ Randfall     │ Gibt ein leeres Array  []  zurück, falls keine Listen                                  │                                      
+                                                     │ existieren.
+   52      GET  /wishlist/:id        │ Standardfall │ Ruft eine spezifische Wunschliste über ihre ID ab und liefert
+                                     │              │ alle zugehörigen Wünsche mit.
+   53      GET  /wishlist/:id        │ Fehlerfall   │ Liefert  null  zurück (200 OK), wenn die Wunschliste mit der
+                                     │              │ ID nicht existiert.
+   54      PUT  /wishlist/:id        │ Standardfall │ Aktualisiert den Titel einer Wunschliste in der DB und
+                                     │              │ liefert das aktualisierte Objekt zurück (200 OK).
+   55      PUT  /wishlist/:id        │ Fehlerfall   │ Gibt  404 Not Found  mit  { message: 'Wishlist not found' }
+                                     │              │ zurück, wenn die ID ungültig ist.
+   56      DELETE  /wishlist/:id     │ Standardfall │ Löscht die Wunschliste und liefert ein leeres  204 No Content
+                                     │              │ zurück.
+   57      DELETE  /wishlist/:id     │ Randfall     │ Gibt ebenfalls  204 No Content  zurück, wenn versucht wird,
+                                     │              │ eine nicht existierende Liste zu löschen.
+   58      POST  /wishlist/:id/wish  │ Standardfall │ Fügt einer existierenden Wunschliste einen neuen Wunsch hinzu
+                                     │              │ und liefert die aktualisierte Liste inklusive Wünsche zurück.
+   59      POST  /wishlist/:id/wish  │ Fehlerfall   │ Gibt  404 Not Found  zurück, wenn versucht wird, einen Wunsch
+                                     │              │ an eine nicht existierende Liste anzuhängen.
+   60      GET  /wish                │ Standardfall │ Gibt alle jemals angelegten Wünsche als Liste zurück.
+   61      GET  /wish/:id            │ Standardfall │ Gibt einen einzelnen Wunsch anhand der ID zurück.
+   62      GET  /wish/:id            │ Fehlerfall   │ Gibt  null  zurück, wenn der Wunsch nicht existiert.
+   63      PUT  /wish/:id            │ Standardfall │ Aktualisiert Titel und Anzahl ( quantity ) eines Wunsch-
+                                     │              │ Eintrags und speichert diese (200 OK).
+>  64      PUT  /wish/:id            │ Fehlerfall   │ Liefert  404 Not Found  mit  { message: 'Wish not found' } ,
+                                     │              │ falls der Wunscheintrag nicht existiert.
+   65      DELETE  /wish/:id         │ Standardfall │ Löscht den Wunsch und liefert  204 No Content  zurück.
+   66      DELETE  /wish/:id         │ Randfall     │ Liefert  204 No Content  zurück, wenn der Wunsch bereits
+                                     │              │ gelöscht war oder nicht existierte.
+          ──────
+   70     ## 🚀 Ausführen der Tests
+   71
+   72     │ [!TIP]
+   73     │ Die Testsuite wurde direkt in das  package.json  des Backends integriert. Du kannst alle Tests über npm
+          │ steuern.
+   74
+   75     Navigiere im Terminal in den Backend-Ordner und starte die Tests:
+   76
+   78       cd src/backend
+   79       npm test
+   81
+   82     Der Test-Befehl ist wie folgt konfiguriert:
+   83
+   84       "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+   85
+   86     Dadurch wird Jest unter Windows, Linux und macOS im nativen ESM-Modus ausgeführt, ohne dass zusätzliche
+>         Abhängigkeiten wie  babel  oder  ts-jest  erforderlich sind.
