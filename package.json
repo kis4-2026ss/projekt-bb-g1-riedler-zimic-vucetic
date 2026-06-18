@@ -1,0 +1,26 @@
+{
+  "name": "projekt-bb-g1-riedler-zimic-vucetic",
+  "version": "1.0.0",
+  "description": "Eine kleine Wishlist-Anwendung mit statischem Frontend und einem Node.js/Express-Backend. Das Backend speichert die Daten in einer lokalen SQLite-Datenbank.",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kis4-2026ss/projekt-bb-g1-riedler-zimic-vucetic.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/kis4-2026ss/projekt-bb-g1-riedler-zimic-vucetic/issues"
+  },
+  "homepage": "https://github.com/kis4-2026ss/projekt-bb-g1-riedler-zimic-vucetic#readme",
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.9"
+  }
+}
