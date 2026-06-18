@@ -1,0 +1,128 @@
+  1      🧪 Testsuite Übersicht - WishBox (Unit, Integration & E2E)
+    2
+    3     Dieses Dokument bietet eine Übersicht über die für die WishBox-Anwendung implementierte Testsuite. Die
+          Testsuite deckt sowohl das Node.js-Backend (Unit- & Integrationstests via Jest & Supertest) als auch die
+          gesamte Benutzeroberfläche und Integration (End-to-End-Tests via Playwright) ab.
+          ──────
+    7     ## 🛠️ Test-Setup & Technologien
+>   8
+    9     • Programmiersprache: JavaScript / Node.js (ECMAScript Modules)
+   10     • Unit- & Integrationstests: Jest https://jestjs.io/ und Supertest https://github.com/ladjs/supertest
+   11     • End-to-End (E2E) Tests: Playwright https://playwright.dev/ (Chromium)
+   12     • Datenbank: SQLite ( sqlite3 ) im  :memory:  Modus für maximale Geschwindigkeit und vollständige
+          Isolation.
+          ──────
+   16     ## 📂 Teststruktur
+   17
+   18     Die Testdateien sind wie folgt organisiert:
+
+   19     • Unit & Integration: app.test.mjs (Testet Backend-Routen, Datenbankinitialisierung und Sequelize-Modelle)
+   20     • End-to-End (E2E): wishlist.spec.mjs (Testet die Benutzeroberfläche und die echte HTTP-Kommunikation mit
+          dem Backend)
+   21     • Konfiguration: playwright.config.mjs (Steuert den automatischen Start des Testservers und Browser-
+          Einstellungen)
+          ──────
+   25     ## 📋 Übersicht der implementierten Testfälle
+   26
+   27     Insgesamt wurden 30 Testfälle (25 Backend + 5 E2E) implementiert:
+   28
+   29     ### 1. Backend: Datenbank-Setup & Modelle (6 Tests)
+   30
+   31      Testfall                         │ Typ  │ Beschreibung
+          ──────────────────────────────────┼──────┼────────────────────────────────────────────────────────────────
+   33       createSequelize  (In-Memory)    │ Unit │ Verifiziert die Erstellung einer In-Memory SQLite-Datenbank.
+   34       createSequelize  (File-based)   │ Unit │ Prüft, ob bei Dateipfaden der übergeordnete Ordner erstellt
+                                            │      │ wird.
+   35       defineModels                    │ Unit │ Prüft, ob die Modelle  Wishlist  und  Wish  samt Assoziationen
+                                            │      │ existieren.
+   36       initializeDatabase  (Seed)      │ Unit │ Prüft, ob die Standard-Einträge bei leerer Datenbank angelegt
+                                            │      │ werden.
+   37       initializeDatabase  (Kein Seed) │ Unit │ Prüft, ob die Datenbank bei  seed: false  leer bleibt.
+   38       initializeDatabase  (Schutz)    │ Unit │ Verhindert erneutes Seeding, falls bereits Daten existieren.
+   39
+   40     ### 2. Backend: REST API Integrationstests (19 Tests)
+   41
+   42     Integrationstests simulieren HTTP-Anfragen an die Express-App via  supertest .
+   43
+   44      Route                     │ Testfall   │ Beschreibung / Erwartetes Ergebnis
+          ───────────────────────────┼────────────┼─────────────────────────────────────────────────────────────────
+   46      POST  /wishlist           │ Standard   │ Erstellt eine neue Wunschliste (200 OK).
+   47      POST  /wishlist           │ Randfall   │ Erlaubt leeren Titel ( Sequelize-Standard ).
+   48      GET  /wishlist            │ Standard   │ Liefert alle Listen inklusive verknüpfter Wünsche.
+   49      GET  /wishlist            │ Randfall   │ Liefert leeres Array  [] , falls keine Listen existieren.
+   50      GET  /wishlist/:id        │ Standard   │ Gibt die spezifische Wunschliste mit Wünschen zurück.
+   51      GET  /wishlist/:id        │ Fehlerfall │ Gibt  null  zurück, wenn die ID nicht existiert.
+   52      PUT  /wishlist/:id        │ Standard   │ Aktualisiert den Titel einer Wunschliste.
+   53      PUT  /wishlist/:id        │ Fehlerfall │ Liefert  404 Not Found  bei nicht existierender ID.
+   54      DELETE  /wishlist/:id     │ Standard   │ Löscht die Wunschliste (204 No Content).
+   55      DELETE  /wishlist/:id     │ Randfall   │ Liefert  204  auch bei nicht existierender ID.
+   56      POST  /wishlist/:id/wish  │ Standard   │ Fügt einen neuen Wunsch zu einer Wunschliste hinzu.
+   57      POST  /wishlist/:id/wish  │ Fehlerfall │ Liefert  404 Not Found  bei ungültiger Wunschlisten-ID.
+   58      GET  /wish                │ Standard   │ Gibt alle Wünsche zurück.
+   59      GET  /wish/:id            │ Standard   │ Liefert einen einzelnen Wunsch anhand der ID.
+   60      GET  /wish/:id            │ Fehlerfall │ Gibt  null  zurück, wenn der Wunsch nicht existiert.
+   61      PUT  /wish/:id            │ Standard   │ Aktualisiert Titel und Anzahl ( quantity ) eines Wunsch-Eintrags
+   62      PUT  /wish/:id            │ Fehlerfall │ Liefert  404  bei nicht existierendem Wunsch.
+   63      DELETE  /wish/:id         │ Standard   │ Löscht einen Wunsch (204 No Content).
+   64      DELETE  /wish/:id         │ Randfall   │ Liefert  204  auch bei nicht existierendem Wunsch.
+   65
+   66     ### 3. End-to-End (E2E): Playwright Tests (5 Tests)
+   67
+   68     Diese Tests laufen in einem echten, headless Chromium-Browser. Sie steuern das Frontend direkt über das
+          file:// -Protokoll und interagieren mit dem Backend, welches von Playwright automatisch im Hintergrund auf
+          Port 3000 gestartet wird.
+   70     │ [!NOTE]
+   71     │ Die E2E-Tests sind zustandsresistent (state-resilient) geschrieben: Jedes E2E-Szenario räumt die
+          │ erstellten Wunschlisten am Ende des Tests über die UI wieder auf, um Seiteneffekte zwischen Testläufen
+          zu
+          │ verhindern.
+   72
+   73      Testfall                         │ Beschreibung                      │ Überprüfte Aktionen
+          ──────────────────────────────────┼───────────────────────────────────┼───────────────────────────────────
+   75       should display page title and   │ Prüft das initiale Laden der      │ Checkt den Seitentitel
+           loaded seeded stats              │ Seite.                            │ ("WishBox"), die
+                                            │                                   │ Verbindungsmeldung ("Verbunden
+                                            │                                   │ mit Backend") sowie die gelesenen
+                                            │                                   │ Standard-Statistiken aus der
+                                            │                                   │ geseeteten Datenbank.
+   76       should create a new wishlist    │ Testet das Erstellen von          │ Öffnet den Erstell-Dialog, gibt
+           and automatically open its       │ Wunschlisten über die UI.         │ einen Namen ein, prüft, ob sich
+           dialog                           │                                   │ danach das Details-Fenster
+                                            │                                   │ automatisch öffnet, und löscht
+                                            │                                   │ die Liste zum Aufräumen.
+   77       should filter the wishlist list │ Testet die clientseitige          │ Erstellt eine temporäre Liste,
+           by title                         │ Filterfunktion.                   │ filtert nach dem Namen und prüft,
+                                            │                                   │ ob die andere Liste ausgeblendet
+                                            │                                   │ wird. Prüft zudem den Empty State
+                                            │                                   │ bei unpassenden Filtern.
+   78       should add, update, and delete  │ Testet die vollständige           │ Öffnet eine Liste, prüft die
+           wishes in a wishlist             │ Verwaltung von Wünschen im        │ seeded Wünsche, fügt einen neuen
+                                            │ Dialog.                           │ Wunsch ("PlayStation 5") hinzu,
+                                            │                                   │ aktualisiert die Menge, validiert
+                                            │                                   │ die Persistenz (Schließen/Öffnen)
+                                            │                                   │ und löscht den Wunsch wieder.
+   79       should rename and delete a      │ Testet das Ändern des Titels      │ Legt eine Liste an, ändert deren
+           wishlist                         │ sowie das Löschen.                │ Titel im Detail-Dialog,
+                                            │                                   │ speichert, schließt den Dialog
+                                            │                                   │ und löscht die Wunschliste
+                                            │                                   │ schließlich über den Button in
+                                            │                                   │ der Listen-Ansicht (inkl.
+                                            │                                   │ Bestätigen des Confirm-Dialogs).
+          ──────
+   83     ## 🚀 Ausführen der Tests
+   84
+   85     │ [!TIP]
+   86     │ Die Befehle sind im  package.json  des Backends konfiguriert. Stelle sicher, dass du dich im Ordner
+          │ src/backend  befindest.
+   87
+   88     ### Backend-Tests (Unit & Integration) ausführen
+
+   89     Führt die 25 Jest-Tests aus (die E2E-Tests werden dabei automatisch ignoriert):
+   90
+   91       npm test
+   93
+   94     ### End-to-End-Tests (Playwright) ausführen
+
+   95     Startet automatisch den Test-Server im Hintergrund und führt die 5 E2E-Tests im Browser aus:
+   96
+   97       npm run test:e2e
