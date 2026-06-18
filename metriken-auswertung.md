@@ -1,178 +1,189 @@
-# Metriken-Auswertung: KI-gestützte Testgenerierung
+# Metriken-Auswertung: Codex-gestützte Testgenerierung
 
 **Projekt:** Wishlist Web-Applikation (Express + Sequelize + SQLite + Vanilla JS)  
-**KI-Assistent:** Claude Sonnet 4.6 (Claude Code)  
+**KI-Assistent:** OpenAI Codex  
 **Kurs:** KIS4 – Künstliche Intelligenz in der Softwareentwicklung  
 **Datum:** 18. Juni 2026  
 **Auswertung auf Branch:** `claude/prompt-5`
 
+> **Wichtige Vorbemerkung – Framework:** Alle Codex-Branches verwenden ausschließlich Nodes **eingebautes Testframework** (`node:test`, `node:assert/strict`). Es werden **keine externen Abhängigkeiten** (Vitest, Supertest, jsdom, Playwright etc.) installiert. Coverage läuft via `node --experimental-test-coverage`. HTTP-Requests in Tests verwenden das native `fetch`-API.
+
 ---
 
-## 1 · Test Coverage (vitest --coverage, Provider: v8)
+## 1 · Test Coverage (`node --experimental-test-coverage`)
 
-Coverage wird für `src/backend/app.mjs` gemessen (Haupt-Geschäftslogik und REST-API).  
-E2E- und Load-Tests werden separat geführt und sind **nicht** in der Coverage enthalten.
+Coverage gemessen auf `src/backend/app.mjs` (Haupt-Geschäftslogik und REST-API).
 
 ### Ergebnis-Tabelle Coverage
 
-| Prompt | Branch | Statements | Branches | Functions | Lines | Uncovered |
-|--------|--------|-----------|----------|-----------|-------|-----------|
-| P1 | `claude/prompt-1` | **98.68 %** (75/76) | **84.61 %** (22/26) | **100 %** (15/15) | **98.68 %** (75/76) | app.mjs:13 |
-| P2 | `claude/prompt-2` | **98.68 %** (75/76) | **88.46 %** (23/26) | **100 %** (15/15) | **98.68 %** (75/76) | app.mjs:13 |
-| P3 | `claude/prompt-3` | **98.68 %** (75/76) | **84.61 %** (22/26) | **100 %** (15/15) | **98.68 %** (75/76) | app.mjs:13 |
-| P4 | `claude/prompt-4` | **98.68 %** (75/76) | **88.46 %** (23/26) | **100 %** (15/15) | **98.68 %** (75/76) | app.mjs:13 |
-| P5 | `claude/prompt-5` | **98.82 %** (84/85) | **90.00 %** (27/30) | **100 %** (21/21) | **98.80 %** (83/84) | app.mjs:13 |
+| Prompt | Branch | Lines % | Branches % | Functions % | Nicht abgedeckt |
+|--------|--------|:-------:|:----------:|:-----------:|:----------------|
+| P1 | `codex/prompt-1` | 98.96 % | 86.96 % | 100 % | app.mjs:13–14 |
+| P2 | `codex/prompt-2` | 98.96 % | 87.50 % | 100 % | app.mjs:13–14 |
+| **P3** | `codex/prompt-3` | **100 %** | **92.00 %** | **100 %** | – |
+| P4 | `codex/prompt-4` | 98.96 % | 87.50 % | 100 % | app.mjs:13–14 |
+| P5 | `codex/prompt-5` | 98.54 % | **75.00 %** | 100 % | app.mjs:179–180, 185 |
 
-### Anmerkungen zur Coverage
+> **Hinweis zum Node.js Coverage-Format:** `node:test` meldet `line %` statt `statements %`. Zeilenwerte sind funktional äquivalent zu Statement-Coverage.
 
-**Dauerhaft nicht abgedeckte Zeile (app.mjs:13):**  
+### Erläuterungen zu den Coverage-Werten
+
+**P3 – einziger Branch mit 100 % Line Coverage:**  
+Der Test `createSequelize creates missing directories for file-backed sqlite storage` verwendet `mkdtemp` aus `node:fs/promises`, um ein echtes temporäres Verzeichnis zu erstellen, und übergibt den Pfad an `createSequelize`. Damit wird Zeile 13 (`mkdirSync(dirname(storage), ...)`), die in allen anderen Branches unabgedeckt bleibt, erstmals ausgeführt.
+
+**P5 – niedrigster Branch-Wert (75 %) trotz bester Struktur:**  
+Codex fügte in P5 eine vollständige 4-Argument-Error-Handler-Middleware in `app.mjs` ein:
 ```javascript
-// app.mjs, Zeile 8–14
-export function createSequelize({ storage = '...', logging = false } = {}) {
-  if (storage !== ':memory:') {
-    mkdirSync(dirname(storage), { recursive: true }); // ← Zeile 13, nie ausgeführt
+// app.mjs, Zeile 177–187 (nur in codex/prompt-5)
+app.use((error, req, res, next) => {
+  if (res.headersSent) {       // ← Zeile 179: nie getestet
+    return next(error);         // ← Zeile 180: nie getestet
   }
-  ...
-}
+  if (error.type === 'entity.parse.failed') {
+    return res.status(400).json(...); // ← getestet (malformed JSON Test)
+  }
+  return res.status(status).json(...); // ← Zeile 185: 500-Pfad nie getestet
+});
 ```
-Alle Tests verwenden `storage: ':memory:'`, weshalb der Pfad zur Datei-DB-Erstellung nie durchlaufen wird. Dies ist eine **bewusste Entscheidung** – der `mkdirSync`-Pfad ist trivialer Infrastruktur-Code und das Risiko ist minimal.
+Der `headersSent`-Zweig und der generische 500-Fehler-Pfad wurden nicht durch Tests abgedeckt.
 
-**Branch-Coverage-Unterschied P1/P3 vs. P2/P4:**  
-In P1 und P3 fehlt ein Coverage-Branch im Vergleich zu P2 und P4 (22 vs. 23 von 26 Branches). In P2 und P4 testen die Unit-Tests zusätzlich `seq.authenticate()` explizit als async-Methode, was einen weiteren Pfad im Sequelize-Wrapper abdeckt.
-
-**P5 höhere Gesamt-Coverage:**  
-P5 zeigt 90% Branch-Coverage (27/30), weil das Coverage-Tool zusätzlich `tests/helpers/db.mjs` einbezieht (9 weitere Statements, 4 weitere Branches), die durch die Integration-Tests vollständig abgedeckt werden.
+**P1/P2/P4 – app.mjs:13–14 unabgedeckt:**  
+Identisch zum claude-Befund: `mkdirSync` wird nur bei File-Storage ausgeführt, alle Tests verwenden `:memory:`.
 
 ---
 
 ## 2 · Pass Rate
 
-| Prompt | Tests gesamt | Bestanden | Fehlgeschlagen | Entfernt | Angepasst | Pass Rate |
-|--------|-------------|-----------|----------------|---------|-----------|-----------|
-| P1 | 23 | **23** | 0 | 0 | 0 | **100 %** |
-| P2 | 76 | **76** | 0 | 0 | 0 | **100 %** |
-| P3 | 81 → 78 | **78** | 0 | **3** | 0 | 100 % (nach Bereinigung) |
-| P4 | 56 | **56** | 0 | 0 | 0 | **100 %** |
-| P5 | 103 → 102 | **102** | 0 | 0 | **1** | 100 % (nach Anpassung) |
+| Prompt | Tests gesamt | Suites | Bestanden | Fehlgeschlagen | Entfernt | Angepasst | Pass Rate |
+|--------|:------------:|:------:|:---------:|:--------------:|:--------:|:---------:|:---------:|
+| P1 | 7 | 0 | **7** | 0 | 0 | 0 | 100 % |
+| P2 | 12 | 0 | **12** | 0 | 0 | 0 | 100 % |
+| P3 | 14 | 3 | **14** | 0 | 0 | 0 | 100 % |
+| P4 | 12 | 0 | **12** | 0 | 0 | 0 | 100 % |
+| P5 | 14 | 5 | **14** | 0 | 0 | 0 | 100 % |
 
-### Details zu Entfernungen und Anpassungen
+> Alle Codex-Branches: **100 % Pass Rate ohne Nachbearbeitung.** Kein einziger Test wurde entfernt oder angepasst.
 
-**P3 – 3 Tests entfernt:**  
-Ursache: Express 4 propagiert Fehler in `async`-Route-Handlern **nicht automatisch** an den globalen Error-Handler. Tests, die einen HTTP-500-Response bei DB-Fehlern erwarteten, hingen dauerhaft im Timeout, weil die `Promise.reject`-Signale nie in eine Fehlerantwort umgewandelt wurden.  
-Betroffene Tests: `POST /wishlist → 500 on db error`, `GET /wishlist → 500 on db error`, `DELETE /wishlist/:id → 500 on db error`.
+### Testanzahl nach Datei / Testart (alle Branches)
 
-**P5 – 1 Test angepasst:**  
-Load-Test-Schwellwert für Durchsatz: Ursprünglich `> 50 req/s`, nach Messung auf `> 5 req/s` korrigiert. SQLite auf Windows (HDD, kein WAL-Modus) erreicht unter 5 parallelen Verbindungen nur ~8 req/s. Der Test dokumentiert nun die reale Baseline statt einer unerfüllbaren Zielgröße.
-
-### Testanzahl nach Testart (Prompt 5)
-
-| Testart | Anzahl Tests | Framework |
-|---------|-------------|-----------|
-| Unit – DB/Sequelize | 11 | Vitest |
-| Unit – Route-Handler (gemockt) | 19 | Vitest + Supertest |
-| Integration – REST API | 27 | Vitest + Supertest + SQLite |
-| Frontend – Utility + DOM | 29 | Vitest + jsdom |
-| E2E – User-Workflows | 11 | Playwright (Chromium) |
-| Load – Performance | 5 | Vitest + autocannon |
-| **Gesamt** | **102** | |
+| Branch | Datei(en) | Tests | Typ |
+|--------|-----------|:-----:|-----|
+| P1 | `test/app.test.mjs` | 5 | Backend Integration (HTTP) |
+| P1 | `test/frontend-static.test.mjs` | 2 | Frontend-Struktur (DOM-Kontrakt) |
+| P2 | `test/backend.test.mjs` | 8 | Unit + Integration |
+| P2 | `test/frontend.test.mjs` | 4 | Frontend-Kontrakt + CSS |
+| P3 | `test/app.test.mjs` | 14 | Unit + Integration (alle in einer Datei, 3 `describe`-Blöcke) |
+| P4 | `test/app.unit.test.mjs` | 3 | Unit (DB-Schicht) |
+| P4 | `test/api.integration.test.mjs` | 4 | Integration (HTTP) |
+| P4 | `test/e2e.test.mjs` | 5 | E2E (statischer Dateiserver + HTTP) |
+| P5 | `test/unit/database.test.mjs` | 3 | Unit (DB-Schicht) |
+| P5 | `test/integration/wishlist-api.test.mjs` | 5 | Integration (HTTP, Wishlist) |
+| P5 | `test/integration/wish-api.test.mjs` | 3 | Integration (HTTP, Wish) |
+| P5 | `test/e2e/backend-http.e2e.test.mjs` | 1 | E2E (User-Workflow) |
+| P5 | `test/e2e/frontend-contract.test.mjs` | 2 | Frontend-Kontrakt |
 
 ---
 
 ## 3 · Qualitative Code-Analyse
 
-### Prompt 1 – `tests/app.test.mjs`
+### Prompt 1 – `test/app.test.mjs` + `test/frontend-static.test.mjs`
 
-**Lesbarkeit:** ★★★☆☆  
-Eine einzige Datei mit 248 Zeilen. Klare `describe`/`it`-Blöcke, aber keine Kommentare oder Abschnittstrennungen. Testbeschreibungen sind präzise (z.B. `"creates a wishlist and returns it"`).
+**Lesbarkeit:** ★★★★☆  
+Kompakte, gut lesbare Dateien. Keine unnötigen Abstraktionen. `startTestBackend()` kapselt sauber das HTTP-Setup. Testbeschreibungen sind sehr knapp gehalten (`"createBackend can initialize..."`) – nennen das Subjekt, nicht das erwartete Verhalten.
 
 **Struktur und Organisation:** ★★☆☆☆  
-Alles in einer Datei – Unit-Tests für `createSequelize`/`defineModels`/`initializeDatabase` sind mit Integrations-HTTP-Tests vermischt. Keine Trennung nach Testart oder Modul.
+Keine `describe`-Blöcke – alle Tests auf Top-Level-Ebene. Kein Shared-Helper-Modul. Frontend-Tests in separater Datei.
 
 **Benennung:** ★★★☆☆  
-Gut verständlich, konsistentes Schema. Beispiel: `"returns 404 for a non-existent wishlist"`.
+Tests beschreiben ein Verhalten, nicht einen Erwartungswert. Beispiel: `"wishlist endpoints support create, read, update, and delete"` – sehr generell; mehrere Assertions in einem Test versteckt.
 
 **Best Practices:** ★★★☆☆  
-- `beforeEach`/`afterEach` korrekt für DB-Lifecycle ✓  
-- Kein Mocking – alle Tests sind integrationslastig ✗  
-- Keine Shared Helpers – Setup-Code wiederholt sich ✗  
-- Keine separate Config-Datei (verwendet implizite Vitest-Defaults) ✗
+- `t.after()` für Server-Cleanup ✓  
+- Kein `beforeEach`/`afterEach` (jeder Test startet eigenen Server) ✓ (isoliert, aber langsamer)  
+- Kein Mocking – reine Integration ✓  
+- Kein dediziertes Shared-Helper-Modul ✗  
+- Frontend: innovativer Ansatz – verifiziert, dass alle `getElementById`-Referenzen in app.js im HTML existieren ✓
 
-### Prompt 2 – `tests/backend.test.mjs` + `tests/frontend.test.mjs`
+### Prompt 2 – `test/backend.test.mjs` + `test/frontend.test.mjs`
 
 **Lesbarkeit:** ★★★★☆  
-Zwei sauber getrennte Dateien: Backend-Logik und Frontend-Verhalten. Kommentar-Trennlinien zwischen Abschnitten (`// ── Section ──`). Lesbarkeit deutlich besser als P1.
+Klare Helper-Funktionen `withBackend()` und `requestJson()` reduzieren Boilerplate. `t.after()` für automatische Teardown. Frontend-Tests prüfen gezielt den CSS-Source-Code auf Responsive-Klassen.
 
 **Struktur und Organisation:** ★★★☆☆  
-Sinnvolle Trennung backend/frontend, aber beide Dateien mischen noch immer Unit- und Integrations-Tests. Noch keine Unterordner.
+Noch keine `describe`-Hierarchie, aber sinnvolle Trennung backend/frontend. `withBackend()` als wiederverwendbarer Helper. Kein Shared-Modul.
 
 **Benennung:** ★★★★☆  
-Präziser als P1, z.B. `"Wish belongs to Wishlist (foreign key association)"`. Teilt dem Leser **warum** der Test relevant ist mit.
-
-**Best Practices:** ★★★☆☆  
-- `beforeEach`/`afterEach` für DB ✓  
-- `window.eval()` + jsdom für Frontend-Tests ✓ (korrekter Ansatz für Browser-Skript ohne Exports)  
-- `vi.fn()` noch nicht eingesetzt ✗  
-- Kein Shared Helper ✗  
-- Frontend: `global.fetch = vi.fn()` korrekt gemockt ✓
-
-### Prompt 3 – `tests/unit/routes.test.mjs` + `tests/integration/wishlist.test.mjs` + `tests/integration/wish.test.mjs` + `tests/frontend/app.test.mjs`
-
-**Lesbarkeit:** ★★★★☆  
-Vier Dateien mit Verzeichnisstruktur. Routes-Test enthält `makeModels()`-Factory für Stub-Verwaltung – sehr lesbar. Integrations-Tests kompakt und fokussiert.
-
-**Struktur und Organisation:** ★★★★☆  
-`unit/`, `integration/`, `frontend/` klar getrennt. Gute Grundlage. Kein `helpers/`-Modul – Setup-Code noch dupliziert zwischen wishlist.test und wish.test.
-
-**Benennung:** ★★★★☆  
-Beschreibungen nennen Kontext und Erwartung: `"persists the wishlist so a subsequent GET returns it"`.
+Deutlich präziser als P1. `"read endpoints preserve the current null response for missing records"` – dokumentiert explizit eine API-Design-Entscheidung. `"initializeDatabase seeds the default wishlist only once"` – beschreibt Idempotenz.
 
 **Best Practices:** ★★★★☆  
-- `vi.fn()` Stubs für alle Modell-Methoden ✓  
-- `makeModels()` Factory-Muster für wiederverwendbare Stubs ✓  
-- `beforeEach` für Stub-Reset per Neuinstanziierung ✓  
-- 3 Tests entfernt statt technische Schuld ignoriert ✓  
-- Kein Shared Helper-Modul ✗  
-- Kein dedizierter `vitest.config.mjs` (globale Defaults) ✗
+- `t.after()` für automatischen Teardown ✓  
+- Helper-Funktionen für HTTP + Backend-Setup ✓  
+- Tests explizite API-Kontrakte (`x-powered-by`, CORS, null-Response) ✓  
+- Frontend: prüft `escapeHtml` auf Source-Code-Ebene (Regex auf app.js) ✓  
+- Frontend: prüft CSS auf Responsive-Layout-Klassen ✓  
+- Kein `describe`/`beforeEach` ✗
 
-### Prompt 4 – `tests/unit/app.unit.test.mjs` + `tests/integration/api.test.mjs` + `tests/e2e/wishlist.spec.mjs`
-
-**Lesbarkeit:** ★★★★★  
-Höchste Lesbarkeit bisher. Jede Datei hat einen File-Level-Kommentar, der Zweck und Mock-Strategie erklärt. E2E-Tests haben Helper-Funktionen (`apiGet`, `apiPost`, `apiDelete`) direkt in der Spec-Datei.
-
-**Struktur und Organisation:** ★★★★★  
-Drei klar getrennte Ebenen. `vitest.config.mjs` schließt E2E explizit aus dem Vitest-Lauf aus. `playwright.config.mjs` mit `webServer`-Konfiguration. `test-server.mjs` als dedizierter Testserver.
-
-**Benennung:** ★★★★★  
-Sehr präzise: `"persists both title and quantity changes"`, `"leaves sibling wishes intact after deletion"`. E2E: `"creates a new wishlist via the dialog and shows it in the list"`.
-
-**Best Practices:** ★★★★★  
-- `vitest.config.mjs` + `playwright.config.mjs` ✓  
-- `test-server.mjs` für saubere E2E-Isolation ✓  
-- Shared Helper `db.mjs` mit `setupTestDb`, `createList`, `addWish` ✓  
-- `beforeEach`/`afterEach` mit DB-close für Isolation ✓  
-- API-Cleanup nach jedem E2E-Test (`apiDelete`) ✓  
-- `reuseExistingServer: true` für Port-Konflikt-Robustheit ✓
-
-### Prompt 5 – alle vorherigen + `tests/frontend/utils.test.mjs` + `tests/e2e/app.spec.mjs` + `tests/load/api.load.test.mjs`
+### Prompt 3 – `test/app.test.mjs` (eine Datei)
 
 **Lesbarkeit:** ★★★★★  
-Jede Datei ist thematisch kohärent. Inline-Kommentare nur dort, wo nicht-offensichtliches Verhalten erklärt wird (z.B. die `window.eval()`-Strategie). Load-Tests erklären im Header die Testphilosophie (konservative Schwellwerte = dokumentierte Baseline).
+Höchste Lesbarkeit bisher. `describe`/`it`/`beforeEach`/`afterEach` mit klarer Hierarchie. Globale `openBackends`/`openServers`-Sets mit `after()`-Assertion zum Leak-Detection. `try/finally` für sichere Ressource-Freigabe.
 
-**Struktur und Organisation:** ★★★★★  
-Vollständige Schichtentrennung:  
-`tests/unit/` · `tests/integration/` · `tests/frontend/` · `tests/e2e/` · `tests/load/`  
-Zwei Vitest-Konfigurationen: `vitest.config.mjs` (Unit/Integration/Frontend) und `vitest.load.config.mjs` (Load, separates Timeout-Profil).
+**Struktur und Organisation:** ★★★★☆  
+3 `describe`-Blöcke: `database factories`, `wishlist routes`, `wish routes`. `beforeEach` erstellt Server pro Test. Alles in einer Datei – gut für Übersichtlichkeit, aber keine Trennung nach Testtyp.
 
 **Benennung:** ★★★★★  
-Parametrisierte Tests via `it.each()`: `"returns '–' for null/undefined/empty"`. Load: `"handles concurrent read requests with zero errors"`. Frontend: `"reverses the card order when direction is toggled"`.
+Sehr präzise Beschreibungen: `"createSequelize creates missing directories for file-backed sqlite storage"`, `"deleting a missing wishlist is idempotent"`, `"returns null for a missing wishlist and 404 when updating one"` – jeder Test nennt exakt das Szenario und die Erwartung.
 
 **Best Practices:** ★★★★★  
-- `it.each()` für Parameterisierung ✓  
-- Getrennte Load-Config mit erhöhtem `testTimeout` ✓  
-- Port 3099 für Load-Tests (kein Konflikt mit Port 3000) ✓  
-- `beforeAll`/`afterAll` für Load-Tests (einmaliger Server-Start) ✓  
-- E2E: vollständiger API-Cleanup, `page.once('dialog', ...)` für Native-Dialog ✓  
-- `vi.fn().mockResolvedValue()` und `mockRejectedValue()` für Fehler-Szenarien ✓
+- `describe`/`it`/`beforeEach`/`afterEach` ✓  
+- `after()` mit Assertions auf Resource-Leaks (Set-Größe) ✓  
+- `try/finally` für sichere Sequelize-Teardowns ✓  
+- Einziger Branch der `mkdirSync`-Pfad (file storage) testet ✓  
+- Tests Idempotenz von Seeding und DELETE ✓  
+- Tests CORS-Header explizit ✓  
+- Keine Trennung nach Testtyp in separate Dateien ✗
+
+### Prompt 4 – `test/app.unit.test.mjs` + `test/integration/api.integration.test.mjs` + `test/e2e/e2e.test.mjs`
+
+**Lesbarkeit:** ★★★★☆  
+Drei klar getrennte Dateien. Shared `helpers.mjs`. E2E-Test implementiert einen eigenen minimalen HTTP-Static-Server in Node.js – keine externen Deps.
+
+**Struktur und Organisation:** ★★★★★  
+Sauberste Trennung bisher: `app.unit.test.mjs` (reine DB-Schicht), `api.integration.test.mjs` (HTTP), `e2e.test.mjs` (Static-Server + API). `npm run test:coverage` als dedizierter Script.
+
+**Benennung:** ★★★★☆  
+Klarer als P1/P2. `"end-to-end wishlist workflow works through the same HTTP API used by the frontend"` beschreibt Zweck und Kontext. `"frontend entrypoint and assets are reachable from a static server"` – erklärt E2E-Kontext.
+
+**Best Practices:** ★★★★☆  
+- Shared `helpers.mjs` für `createTestServer` ✓  
+- Unit / Integration / E2E klar getrennt ✓  
+- `test:coverage` npm-Script ✓  
+- `try/finally` für Teardown ✓  
+- E2E-Server: Path-Traversal-Schutz (`filePath.startsWith(frontendRoot)`) ✓  
+- Kein `describe`/`beforeEach` in integration + unit ✗  
+- Kein `afterEach` – Cleanup nur via `finally` ✗
+
+### Prompt 5 – `test/unit/`, `test/integration/`, `test/e2e/` + `helpers/`
+
+**Lesbarkeit:** ★★★★★  
+Vollständige Verzeichnisstruktur, `describe`/`it` durchgängig, Shared Helpers in eigenem Unterverzeichnis. E2E-Test beschreibt explizit den Frontend-Kontext (`"covers the user workflow used by the static frontend"`).
+
+**Struktur und Organisation:** ★★★★★  
+Beste Struktur aller Codex-Branches:  
+`test/unit/` · `test/integration/` · `test/e2e/` · `test/helpers/`  
+Separate npm-Scripts: `test:unit`, `test:integration`, `test:e2e`, `test` (alle inkl. coverage).
+
+**Benennung:** ★★★★★  
+`"rejects malformed JSON before route handlers execute"` – beschreibt Middleware-Layer-Kontext. `"keeps wishlist and wish associations intact when fetching a wishlist"` – beschreibt Datenintegrität.
+
+**Best Practices:** ★★★★★  
+- `describe`/`it` durchgängig ✓  
+- Shared `backend-test-utils.mjs` mit `createTestBackend`, `requestJson`, `jsonBody` ✓  
+- Separate npm-Scripts je Testart ✓  
+- Testet Fehlerbehandlungs-Middleware (malformed JSON → 400) ✓  
+- Testet CORS + x-powered-by ✓  
+- Einziger Branch mit explizitem 400-Bad-Request-Test ✓  
+- Coverage-Rückgang durch untestete Error-Handler-Edges ✗
 
 ---
 
@@ -183,48 +194,48 @@ Parametrisierte Tests via `it.each()`: `"returns '–' for null/undefined/empty"
 | Edge Case | P1 | P2 | P3 | P4 | P5 |
 |-----------|:--:|:--:|:--:|:--:|:--:|
 | Leere DB (GET → `[]`) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Ungültige/nicht-existente ID (404) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| GET non-existent → `null` (by design) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| DELETE non-existent → 204 (idempotent) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| PUT non-existent → 404 | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Leerer Body bei POST | – | – | ✓ | ✓ | ✓ |
-| Geschwister-Entities bleiben unberührt | – | – | – | ✓ | ✓ |
-| Persistenz über Request-Grenzen | – | – | ✓ | ✓ | ✓ |
-| Seeding idempotent | – | ✓ | ✓ | ✓ | ✓ |
-| Fehlerfall fetch (Frontend → Backend-Fehler) | – | ✓ | ✓ | – | ✓ |
-| XSS-Eingaben (`<script>`, `"`, `'`, `&`) | – | – | – | – | ✓ |
-| null/undefined in Utility-Funktionen | – | – | – | – | ✓ |
-| Ungültiger ISO-Datums-String | – | – | – | – | ✓ |
-| Concurrent Write (Load-Test) | – | – | – | – | ✓ |
-| Enter-Taste als Formular-Submit (E2E) | – | – | – | – | ✓ |
-| Native Browser-Dialog (confirm) | – | – | – | ✓ | ✓ |
+| Nicht-existente ID bei PUT → 404 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GET non-existent → `null` (API-Kontrakt) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| DELETE non-existent → 204 (idempotent) | – | – | ✓ | – | – |
+| POST Wish auf fehlende Wishlist → 404 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Seeding idempotent (doppelter Aufruf) | – | ✓ | ✓ | ✓ | ✓ |
+| File-Storage: Verzeichnis anlegen | – | – | ✓ | – | ✓ |
+| DOM-ID-Kontrakt (HTML ↔ app.js) | ✓ | ✓ | – | ✓ | ✓ |
+| CSS Responsive-Layout-Klassen | – | ✓ | – | – | – |
+| escapeHtml Source-Code-Verifikation | – | ✓ | – | – | – |
+| CORS-Header (`Access-Control-Allow-Origin`) | – | – | ✓ | ✓ | ✓ |
+| x-powered-by deaktiviert | – | ✓ | ✓ | ✓ | ✓ |
+| Malformed JSON → 400 | – | – | – | – | ✓ |
+| Multi-Wish-Workflow (2 Wishes parallel) | – | – | – | – | ✓ |
+| Geschwister-Wishes nach Deletion | – | – | – | – | ✓ |
+| Path-Traversal-Schutz (Static Server) | – | – | – | ✓ | – |
+| Associations nach fetch (n+1 sicher) | – | – | – | – | ✓ |
 
 ### Redundanz-Analyse
 
 | Prompt | Redundante Tests | Begründung |
-|--------|-----------------|------------|
-| P1 | ~0 | Kompakter Satz, jeder Test prüft etwas anderes |
-| P2 | ~2 | `createSequelize`-Tests in frontend.test.mjs überlappen mit backend.test.mjs |
-| P3 | ~0 | Gute Trennung unit/integration vermeidet Doppelungen |
-| P4 | ~1 | `page loads` und `status line shows connection` könnten zusammengefasst werden |
-| P5 | ~1 | E2E `statistics panel` prüft ähnliches wie Unit-`render – statistics`; aber Ebenen-unterschied rechtfertigt beides |
-
-**Gesamtbewertung:** Redundanz ist in allen Prompts sehr gering. Mit steigender Prompt-Qualität (P3+) sinkt Redundanz spürbar durch bewusste Trennung nach Testart.
+|--------|:---------------:|------------|
+| P1 | ~0 | Minimal-Set, jeder Test hat klaren eigenen Scope |
+| P2 | ~1 | CRUD-Flow im Backend-Test überschneidet sich mit P1-Pattern |
+| P3 | ~0 | Gute Trennung durch `describe`-Hierarchie |
+| P4 | ~1 | E2E wiederholt Teile des Integration-CRUD-Tests |
+| P5 | ~1 | E2E `backend-http.e2e.test.mjs` testet ähnlichen Flow wie `wishlist-api.test.mjs`; bewusst auf anderer Ebene |
 
 ---
 
 ## 5 · Anforderungserfüllung
 
-### Prompt 1 – „Generiere eine Testsuite für das Projekt"
+### Prompt 1 – „Generiere eine Testsuite für das Projekt, das in src liegt"
 
 | Anforderung | Erfüllt | Bemerkung |
 |-------------|:-------:|-----------|
-| Tests für das Projekt in `src/` | ✓ | Backend vollständig abgedeckt |
-| Ausführbar | ✓ | 23/23 Tests grün |
-| Sinnvoll strukturiert | ~ | Alles in einer Datei |
-| Frontend-Tests | ✗ | Nicht explizit gefordert, nicht geliefert |
+| Tests für das Projekt in `src/` | ✓ | Backend + Frontend-Struktur |
+| Ausführbar | ✓ | 7/7 Tests grün |
+| Sinnvoll strukturiert | ~ | Keine `describe`-Blöcke |
+| Frontend-Tests | ✓ | DOM-ID-Kontrakt und Asset-Prüfung |
+| Keine externen Abhängigkeiten | ✓ | Nur `node:test`, `node:assert` |
 
-**Erfüllungsgrad: 75 %** – Die minimale Anforderung wurde erfüllt, aber die einfache Prompt-Formulierung ließ Frontend-Tests und Strukturvorgaben offen.
+**Erfüllungsgrad: 80 %** – Deutlich besser als claude/P1 (75 %) dank eigeninitiativem Frontend-Test. Keine `describe`-Struktur.
 
 ---
 
@@ -232,13 +243,13 @@ Parametrisierte Tests via `it.each()`: `"returns '–' for null/undefined/empty"
 
 | Anforderung | Erfüllt | Bemerkung |
 |-------------|:-------:|-----------|
-| Tests für alle relevanten Funktionen/Klassen | ✓ | Backend + Frontend |
-| Typische/realistische Anwendungsfälle | ✓ | Normale CRUD-Flows |
-| Ausführbar und strukturiert | ✓ | 2 Dateien, klare Trennung |
-| Randfälle berücksichtigt | ~ | Einige 404s, kein XSS |
-| Fehlerfälle | ~ | `fetch`-Fehler im Frontend, nicht alle HTTP-Fehlercodes |
+| Tests für alle relevanten Funktionen/Klassen | ✓ | Unit-artige Model-Tests + Integration |
+| Typische/realistische Anwendungsfälle | ✓ | Realistischer CRUD-Flow auf Deutsch |
+| Ausführbar und strukturiert | ✓ | 2 Dateien, Helper-Funktionen |
+| Randfälle berücksichtigt | ✓ | null-Response dokumentiert, 404s, Idempotenz |
+| Frontend-Tests | ✓ | DOM-Kontrakt + CSS + escapeHtml-Verifikation |
 
-**Erfüllungsgrad: 80 %** – Deutlich umfangreicher als P1, Frontend eingeschlossen, aber Mocks und Edge Cases noch ausbaubar.
+**Erfüllungsgrad: 90 %** – Sehr starke Umsetzung. `escapeHtml`-Source-Check und CSS-Responsive-Test zeigen Kreativität. Kein `describe`-Muster.
 
 ---
 
@@ -246,14 +257,15 @@ Parametrisierte Tests via `it.each()`: `"returns '–' for null/undefined/empty"
 
 | Anforderung | Erfüllt | Bemerkung |
 |-------------|:-------:|-----------|
-| Framework automatisch erkannt | ✓ | Vitest korrekt gewählt |
-| Unit-Tests mit Mocks/Stubs | ✓ | `vi.fn()` Stubs für alle Modell-Methoden |
-| Standard-, Rand- und Fehlerfälle | ✓ | 404, leere DB, empty body |
-| Dateistruktur passend zum Projekt | ✓ | `unit/`, `integration/`, `frontend/` |
-| Keine redundanten Tests | ✓ | 3 nicht-testbare Tests entfernt |
-| Übersicht der Testfälle | ✓ | Im Commit-Kommentar dokumentiert |
+| Framework automatisch erkannt | ✓ | `node:test` (kein npm nötig) |
+| Standard-, Rand- und Fehlerfälle | ✓ | inkl. Idempotenz, null, 404, file-storage |
+| Dateistruktur passend zum Projekt | ~ | Alles in einer Datei (aber mit `describe`) |
+| Keine redundanten Tests | ✓ | Hierarchie verhindert Doppelungen |
+| Übersicht der Testfälle | ✓ | `describe`-Hierarchie als implizite Übersicht |
+| Mocks/Stubs | ✗ | Keine Mocks – ausschließlich Integration |
+| 100 % Line Coverage | ✓ | Einziger Branch der file-storage testet |
 
-**Erfüllungsgrad: 90 %** – Alle Anforderungen erfüllt. Kleine Abzüge: kein gemeinsamer Helper, keine vitest.config.mjs.
+**Erfüllungsgrad: 85 %** – 100% Line Coverage ist ein herausragendes Ergebnis. Kein Mocking (Anforderung erwähnt Stubs), alles in einer Datei.
 
 ---
 
@@ -261,16 +273,16 @@ Parametrisierte Tests via `it.each()`: `"returns '–' for null/undefined/empty"
 
 | Anforderung | Erfüllt | Bemerkung |
 |-------------|:-------:|-----------|
-| Projektstruktur zuerst analysiert | ✓ | Vollständige Analyse vor Implementierung |
-| Framework erkannt | ✓ | Vitest + Playwright |
-| Unit-Tests | ✓ | `app.unit.test.mjs` |
-| Integration-Tests | ✓ | `api.test.mjs` |
-| E2E-Tests mit Playwright | ✓ | `wishlist.spec.mjs`, 11 Tests |
-| Mocks nur wo notwendig | ✓ | Nur Unit-Tests verwenden Mocks |
-| Vollständig lauffähig | ✓ | 56/56 Tests grün |
-| Testfall-Übersicht | ✓ | Umfangreiche Dokumentation |
+| Projektstruktur zuerst analysiert | ✓ | Reflected in Dateiaufteilung |
+| Unit-Tests | ✓ | `app.unit.test.mjs` (DB-Schicht) |
+| Integration-Tests | ✓ | `api.integration.test.mjs` |
+| E2E-Tests | ✓ | `e2e.test.mjs` (ohne Playwright – Node.js nativ) |
+| Playwright | ✗ | Verwendet eigenen Static-HTTP-Server statt Playwright |
+| Vollständig lauffähig | ✓ | 12/12 Tests grün |
+| Shared Helpers | ✓ | `helpers.mjs` |
+| Mocks nur wo notwendig | ✓ | Keine künstlichen Mocks |
 
-**Erfüllungsgrad: 95 %** – Nahezu vollständige Umsetzung. Kleine Lücke: Frontend-Unit-Tests nicht enthalten.
+**Erfüllungsgrad: 85 %** – Solide Unit/Integration/E2E-Trennung. Playwright-Anforderung nicht erfüllt (bewusste Entscheidung für Zero-Dependency-Ansatz). Eigener Static-Server ist kreativ aber kein echter Browser-Test.
 
 ---
 
@@ -278,19 +290,19 @@ Parametrisierte Tests via `it.each()`: `"returns '–' for null/undefined/empty"
 
 | Anforderung | Erfüllt | Bemerkung |
 |-------------|:-------:|-----------|
-| Architektur- und Risikoanalyse | ✓ | Vollständige Projektanalyse |
-| Unit, Integration, E2E, Load | ✓ | Alle 5 Testebenen implementiert |
-| Möglichst hohe Testabdeckung | ✓ | 90% Branch, 100% Functions |
-| Vollständig lauffähig | ✓ | 102/102 Tests grün |
-| `it.each()`, parametrisierte Tests | ✓ | In `utils.test.mjs` und `sequelize.test.mjs` |
-| Keine fragilen Tests | ✓ | Kein DOM-Snapshot, kein Screenshot-Vergleich |
-| Keine redundanten Tests | ✓ | ~1 Überschneidung E2E/Unit (bewusst: Ebenenunterschied) |
-| Schwachstellen-Dokumentation | ✓ | 7 Schwachstellen (SW-1 bis SW-7) |
-| Refactoring-Vorschläge | ✓ | 6 priorisierte Vorschläge |
-| Testfall-Matrix | ✓ | 24 Szenarien × 5 Ebenen |
-| Teststrategie | ✓ | Vollständig beschrieben |
+| Architektur- und Risikoanalyse | ~ | Implizit in Dateistruktur, nicht explizit dokumentiert |
+| Unit, Integration, E2E | ✓ | Vollständige Verzeichnisstruktur |
+| Load-Tests | ✗ | Nicht implementiert |
+| Möglichst hohe Testabdeckung | ~ | 75% Branch (schlechter als P3!) |
+| Vollständig lauffähig | ✓ | 14/14 Tests grün |
+| Schwachstellen-Dokumentation | ✗ | Nicht als Dokument geliefert |
+| Refactoring-Vorschläge | ✗ | Nicht geliefert |
+| Testfall-Matrix | ✗ | Nicht geliefert |
+| Teststrategie | ✗ | Nicht geliefert |
+| Fehlerbehandlung (400 Bad Request) | ✓ | Einziger Branch mit malformed-JSON-Test |
+| Separate npm-Scripts je Testart | ✓ | `test:unit`, `test:integration`, `test:e2e` |
 
-**Erfüllungsgrad: 100 %** – Alle Anforderungen vollständig umgesetzt.
+**Erfüllungsgrad: 60 %** – Beste Teststruktur aller Codex-Branches, aber die umfangreichen Dokumentations-Anforderungen (Matrix, Strategie, Schwachstellen) wurden nicht erfüllt. Load-Tests fehlen vollständig.
 
 ---
 
@@ -298,59 +310,80 @@ Parametrisierte Tests via `it.each()`: `"returns '–' for null/undefined/empty"
 
 | Metrik | P1 | P2 | P3 | P4 | P5 |
 |--------|:--:|:--:|:--:|:--:|:--:|
-| **Tests gesamt (final)** | 23 | 76 | 78 | 56 | 102 |
+| **Tests gesamt** | 7 | 12 | 14 | 12 | 14 |
 | **Pass Rate** | 100 % | 100 % | 100 % | 100 % | 100 % |
-| **Tests entfernt/angepasst** | 0 | 0 | 3 entfernt | 0 | 1 angepasst |
-| **Stmt Coverage (app.mjs)** | 98.68 % | 98.68 % | 98.68 % | 98.68 % | 98.82 % |
-| **Branch Coverage** | 84.61 % | 88.46 % | 84.61 % | 88.46 % | **90.00 %** |
+| **Tests entfernt/angepasst** | 0 | 0 | 0 | 0 | 0 |
+| **Line Coverage** | 98.96 % | 98.96 % | **100 %** | 98.96 % | 98.54 % |
+| **Branch Coverage** | 86.96 % | 87.50 % | **92.00 %** | 87.50 % | 75.00 % |
 | **Function Coverage** | 100 % | 100 % | 100 % | 100 % | 100 % |
-| **Testdateien** | 1 | 2 | 4 | 3+1 E2E | 4+1E2E+1Load |
-| **Unit-Tests (gemockt)** | – | – | ✓ | ✓ | ✓ |
-| **Integration-Tests** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Frontend-Tests (jsdom)** | – | ✓ | ✓ | – | ✓ |
-| **E2E-Tests (Playwright)** | – | – | – | ✓ | ✓ |
-| **Load-Tests (autocannon)** | – | – | – | – | ✓ |
-| **Shared Helpers** | – | – | – | ✓ | ✓ |
-| **Vitest-Konfiguration** | – | – | – | ✓ | ✓✓ |
-| **Mocks (vi.fn)** | – | – | ✓ | ✓ | ✓ |
-| **Edge Cases (XSS, null)** | – | – | – | – | ✓ |
-| **Lesbarkeit** | ★★★☆☆ | ★★★★☆ | ★★★★☆ | ★★★★★ | ★★★★★ |
+| **Testdateien** | 2 | 2 | 1 | 3 | 5 |
+| **Testebenen** | 2 | 2 | 1 | 3 | 3 |
+| **Externe Abhängigkeiten** | – | – | – | – | – |
+| **describe/it Struktur** | – | – | ✓ | ~ | ✓ |
+| **beforeEach/afterEach** | – | – | ✓ | – | – |
+| **Shared Helper-Modul** | – | – | – | ✓ | ✓ |
+| **Unit-Tests (DB-Schicht)** | – | ✓ | ✓ | ✓ | ✓ |
+| **Integration-Tests (HTTP)** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Frontend-Kontrakt-Tests** | ✓ | ✓ | – | ✓ | ✓ |
+| **E2E-Tests (kein Browser)** | – | – | – | ✓ | ✓ |
+| **Browser E2E (Playwright)** | – | – | – | – | – |
+| **Load-Tests** | – | – | – | – | – |
+| **file-storage Pfad getestet** | – | – | ✓ | – | ✓ |
+| **CORS-Header getestet** | – | – | ✓ | ✓ | ✓ |
+| **Malformed JSON → 400** | – | – | – | – | ✓ |
+| **Idempotenz (DELETE 404→204)** | – | – | ✓ | – | – |
+| **CSS-Layout getestet** | – | ✓ | – | – | – |
+| **Resource-Leak-Detection** | – | – | ✓ | – | – |
+| **Lesbarkeit** | ★★★★☆ | ★★★★☆ | ★★★★★ | ★★★★☆ | ★★★★★ |
 | **Struktur** | ★★☆☆☆ | ★★★☆☆ | ★★★★☆ | ★★★★★ | ★★★★★ |
-| **Best Practices** | ★★★☆☆ | ★★★☆☆ | ★★★★☆ | ★★★★★ | ★★★★★ |
-| **Anforderungserfüllung** | 75 % | 80 % | 90 % | 95 % | **100 %** |
+| **Best Practices** | ★★★☆☆ | ★★★★☆ | ★★★★★ | ★★★★☆ | ★★★★★ |
+| **Anforderungserfüllung** | 80 % | 90 % | 85 % | 85 % | **60 %** |
 
 ---
 
 ## 7 · Interpretation und Fazit
 
-### Erkenntnisse aus dem Vergleich
+### Herausragende Besonderheiten der Codex-Branches
 
-**Coverage konvergiert schnell:** Bereits P1 erreicht 98.68% Statement Coverage. Dies liegt daran, dass der Code (`app.mjs`) kompakt und gut testbar strukturiert ist – die KI-generierten Tests decken den kritischen Pfad sofort ab. Die verbleibenden ~1.3% sind bewusst nicht getestet (file-storage-Pfad).
+**Zero-Dependency-Philosophie (alle Branches):**  
+Codex installiert in keinem einzigen Branch externe Abhängigkeiten. Statt Supertest wird `fetch` verwendet, statt Playwright ein selbst-gebauter Static-HTTP-Server, statt jsdom werden HTML- und JS-Dateien als Strings gelesen und per Regex analysiert. Dies ist eine bewusste, konsistente Designentscheidung – nicht ein Mangel.
 
-**Branch Coverage verbessert sich graduell:** Von 84.61% (P1, P3) auf 90% (P5). Der Sprung entsteht durch:
-1. Explizite Unit-Tests für bedingte Pfade in `createSequelize`
-2. Frontend-Tests, die `null`/`undefined`-Zweige in Utility-Funktionen testen
-3. Dedizierter Helper-Code in `db.mjs` als Testkandidat
+**P3 – 100 % Line Coverage durch file-storage Test:**  
+Der einzige Codex-Branch (und insgesamt der einzige Branch im gesamten Projekt), der den `mkdirSync`-Pfad testet. `mkdtemp` aus `node:fs/promises` erzeugt ein echtes temporäres Verzeichnis – sauber und ohne Mocking.
 
-**Qualitative Verbesserung ist signifikanter als quantitative:** Der Sprung von 23 auf 76 Tests (P1→P2) erhöht die Coverage kaum. Der Sprung von P3 auf P4 (78→56 Tests, trotz Rückgang!) bringt durch E2E-Tests echter Mehrwert: Regressionssicherheit für User-Workflows.
+**P3 – Resource-Leak-Detection:**  
+```javascript
+after(async () => {
+  assert.equal(openBackends.size, 0);
+  assert.equal(openServers.size, 0);
+});
+```
+Diese globale Post-Run-Assertion verifiziert, dass alle Backends/Server korrekt geschlossen wurden – ein Best Practice, das in keinem anderen Branch vorkommt.
 
-**Prompt-Präzision ist entscheidend:** 
-- P1 (9 Wörter) → monolithische Datei, nur Integration
-- P5 (250 Wörter) → 5 Testebenen, Dokumentation, 102 Tests
+**P5 – Error-Handling-Middleware in app.mjs:**  
+Als einziger Branch fügt P5 eine vollständige 4-Argument-Fehler-Middleware in `app.mjs` ein und testet den malformed-JSON-Fall (400). Dies löst das Express-4-Problem (fehlende async-Error-Propagation) auf Produktionscode-Ebene – statt Tests zu entfernen wie claude/P3.
 
-Jedes zusätzliche Anforderungsdetail im Prompt führte direkt zu besserer Testqualität.
+**P2 – escapeHtml-Source-Verifikation:**  
+```javascript
+assert.match(script, /function escapeHtml\(str\)/);
+assert.match(script, /\.replaceAll\("&", "&amp;"\)/);
+```
+Diese Regex-Tests auf dem Quelltext von app.js verifizieren die Existenz und Korrektheit der XSS-Schutzfunktion – ohne jsdom oder eval(). Unorthodox, aber robust.
 
-**Mocking-Einführung (P3) war ein Wendepunkt:** Erst durch die explizite Anforderung nach Mocks/Stubs wurden Unit-Tests von Integrationstests getrennt. Dies ermöglicht schnellere, zuverlässigere Tests ohne DB-Abhängigkeit.
+### Vergleich: Codex vs. Claude
 
-### Praktische Empfehlung
-
-Für KI-gestützte Testgenerierung in realen Projekten empfiehlt sich ein Prompt-Niveau vergleichbar mit **P4 oder P5** als Ausgangspunkt:
-
-1. Architektur explizit beschreiben lassen
-2. Testebenen (Unit/Integration/E2E) explizit fordern
-3. Qualitätsanforderungen (keine Mocks außer nötig, keine fragilen Tests) explizit nennen
-4. Mocking-Strategie vorgeben
-5. Ausführbarkeit als Pflichtkriterium definieren
+| Dimension | Codex | Claude |
+|-----------|-------|--------|
+| Externe Abhängigkeiten | Keine (nur `node:test`) | Vitest, Supertest, jsdom, Playwright, autocannon |
+| Max. Tests (P5) | 14 | 102 |
+| Max. Line Coverage | **100 %** (P3) | 98.82 % (P5) |
+| Max. Branch Coverage | **92 %** (P3) | 90 % (P5) |
+| Testebenen | max. 3 (Unit/Integ./E2E) | max. 5 (Unit/Integ./Frontend/E2E/Load) |
+| Browser E2E (Playwright) | Nein | Ja (P4, P5) |
+| Frontend DOM-Tests | Kontrakt-basiert (Regex) | jsdom-basiert (echte Ausführung) |
+| Dokumentation (Matrix, Strategie) | Nein | Ja (P5) |
+| Pass Rate ohne Nachbearbeitung | **100 %** alle Branches | 100 % (nach Entfernung/Anpassung) |
+| Setup-Aufwand | Minimal (kein `npm install`) | Hoch (Playwright-Download ~150 MB) |
 
 ---
 
