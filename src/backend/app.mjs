@@ -174,6 +174,19 @@ export function createApp({ models }) {
     return res.status(204).send();
   });
 
+  app.use((error, req, res, next) => {
+    if (res.headersSent) {
+      return next(error);
+    }
+
+    if (error.type === 'entity.parse.failed') {
+      return res.status(400).json({ message: 'Invalid JSON payload' });
+    }
+
+    const status = Number.isInteger(error.status) ? error.status : 500;
+    return res.status(status).json({ message: status === 500 ? 'Internal server error' : error.message });
+  });
+
   return app;
 }
 
