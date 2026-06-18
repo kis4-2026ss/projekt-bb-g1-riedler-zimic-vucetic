@@ -34,22 +34,23 @@ Anstatt dass menschliche Entwickler iterativ Tests schreiben, agiert die KI in d
 Hier ist die Aufgabenaufteilung und der vorläufige Zeitplan für das Projekt:
 
 **Woche 1: Setup & Prompt Engineering**
-* Einrichtung der lokalen Node.js-Testumgebung (Jest, Playwright, k6) für die WishBox-Anwendung. (S)
+* Einrichtung der lokalen Node.js-Testumgebung (Jest, Playwright, k6) für die WishBox-Anwendung. (S, B)
 * Entwurf und Verfeinerung des "Single Prompts", der an die KI-Modelle übergeben wird. (C)
-* Ausführung des Prompts über die Google Gemini CLI. (S) 
-* Ausführung des Prompts über ChatGPT / Codex. (S) 
-* Isolierung und Speicherung der roh generierten Test-Suites (ohne nachträgliche menschliche Anpassungen). (S)
+* Ausführung des Prompts über die Google Gemini CLI. (S)
+* Ausführung des Prompts über ChatGPT / Codex. (S)
+* Ausführung des Prompts über die Claude Code CLI. (B) 
+* Isolierung und Speicherung der roh generierten Test-Suites (ohne nachträgliche menschliche Anpassungen). (S, B)
 
 
 
 
 **Woche 2: Ausführung & Erfassung der Metriken**
-* erneute Ausführung der Test-Suites. (beide)
-* Aufzeichnung der anfänglichen Pass/Fail-Raten und Testabdeckungsmetriken. (beide)
-* Head-to-Head Gegenüberstellug der verschiedenen Modelle. (beide)
-* Zusammenfassung der Erkenntnisse zur Machbarkeit von Single-Prompt-KI-Tests. (beide)
-* Aufzeichnung der durch die KI gefundenen Bugs/Errors im gegebenen Quellcode (beide)
-* Fertigstellung der Präsentation und Dokumentation. (beide)
+* erneute Ausführung der Test-Suites. (alle)
+* Aufzeichnung der anfänglichen Pass/Fail-Raten und Testabdeckungsmetriken. (alle)
+* Head-to-Head Gegenüberstellug der verschiedenen Modelle. (alle)
+* Zusammenfassung der Erkenntnisse zur Machbarkeit von Single-Prompt-KI-Tests. (alle)
+* Aufzeichnung der durch die KI gefundenen Bugs/Errors im gegebenen Quellcode (alle)
+* Fertigstellung der Präsentation und Dokumentation. (alle)
 
 
 
@@ -59,7 +60,6 @@ Hier ist die Aufgabenaufteilung und der vorläufige Zeitplan für das Projekt:
 
 * **Sanin Zimic:**
 siehe oben (S)
-
 
 * **Christoph Riedler:**
 siehe oben (C)
