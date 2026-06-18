@@ -1,0 +1,220 @@
+  1      🕵️ Senior Test Automation Report - WishBox QA Suite
+    2
+    3     Dieses Dokument wurde im Rahmen einer umfassenden Qualitätsanalyse durch einen Senior Test
+          Automation Engineer für das Projekt WishBox erstellt. Es enthält eine Projektanalyse, Sicherheits-
+          und Codewachstellen-Analysen, Refactoring-Vorschläge, eine Teststrategie, eine Testfall-Matrix sowie
+          Ausführungshinweise für die implementierte Testsuite.
+          ──────
+    7     ## 🔍 1. Projekt- & Architektur-Analyse
+    8
+    9     Das Projekt WishBox besteht aus zwei Hauptkomponenten:
+
+   10     1. Frontend: Eine klassische Single-Page-Applikation (SPA) in Vanilla HTML, CSS und JavaScript (
+          src/frontend ). Die Kommunikation erfolgt über die native Browser  fetch  API. Es nutzt einen
+          globalen State ( wishlists ,  state ) und führt die DOM-Manipulationen direkt aus.
+   11     2. Backend: Ein Node.js Express Server ( src/backend ) mit Sequelize ORM und SQLite-Datenbank (
+          db/main.db ).
+   12
+   13         ┌───────────────────────────┐    ┌──────────────────────────────┐    ┌─────────────────┐
+    ⋮         │ Client Browser / Frontend │             │ Express Web Server / Backend │               │ SQLite Database │
+    ⋮         └───────────────────────────┘    └──────────────────────────────┘    └─────────────────┘
+   21
+ 22     ### Kritische Geschäftslogik
+
+   23     • Listen-Verwaltung (CRUD): Erstellen, Auslesen, Umbenennen und Löschen von Wunschlisten.
+   24     • Wunsch-Verwaltung (CRUD): Hinzufügen, Bearbeiten der Menge/des Titels und Löschen von Wünschen
+          innerhalb einer Wunschliste.
+   25     • Clientseitige Berechnung & Sortierung:
+   26         • Filterung nach Wunschlisten-Titel (case-insensitive).
+   27         • Sortierung nach Erstelldatum oder Titel (auf- und absteigend).
+   28         • Aggregation von Statistiken (Gesamtanzahl Listen, Gesamtanzahl Wünsche, durchschnittliche
+              Wünsche pro Liste, Top 3 Wünsche).
+   29
+   30     ──────
+   32     ## ⚠️ 2. Potenzielle Schwachstellen im bestehenden Code
+   33
+   34     Während der Testabdeckung wurden folgende konzeptionelle und sicherheitsrelevante Schwachstellen
+          identifiziert:
+   35
+   36     1. Fehlende Input-Validierung im Backend:
+   37         • Das Backend erstellt Wunschlisten und Wünsche direkt aus dem Request-Body ohne Sanitization
+              oder Validierung:  Wishlist.create({ title: req.body.title }) .
+>  38         • Risiko: Übergabe von leeren Daten ( null ,  undefined ) ist möglich.
+  39         • Modell-Fehler: Das Feld  quantity  im Modell  Wish  wird nicht auf  quantity >= 1  validiert.
+              Ein Angreifer kann negative Werte per API einspeisen.
+   40     2. Cross-Site Scripting (XSS) Anfälligkeit:
+   41         • Die Sanitization erfolgt ausschließlich clientseitig bei der HTML-Erzeugung in  app.js
+              mittels  escapeHtml() .
+   42         • Risiko: Wenn zukünftige Frontend-Updates oder externe API-Konsumenten vergessen, HTML-Entities
+              zu escapen, führt dies zu XSS, da die Rohdaten in der SQLite-Datenbank unbereinigt gespeichert
+              werden.
+   43     3. Globale CORS-Wildcard:
+   44         • Das Express-Backend konfiguriert  cors({ origin: '*' }) .
+   45         • Risiko: Dies erlaubt jeder beliebigen Website im Browser, API-Anfragen an das Backend zu
+              senden. Für lokale Projekte okay, in Produktionsumgebungen ein kritisches Sicherheitsrisiko
+              (Cross-Origin Data Leakage).
+   46     4. Fehlende Authentifizierung:
+   47         • Es gibt keine Benutzerkontrolle. Jeder anonyme User kann alle Listen und Wünsche löschen oder
+              verändern.
+   48     5. Datenbank-Deadlocks:
+>  49         • Da SQLite dateibasiert arbeitet, sperrt es bei Schreibzugriffen die gesamte Datenbank. Bei
+            hoher Concurrency (viele parallele Schreib-Requests) kommt es zu Blockaden.
+   50
+   51     ──────
+   53     ## 🛠️ 3. Refactoring-Vorschläge zur Testbarkeits-Optimierung
+   54
+   55     │ [!WARNING]
+   56     │ Das Frontend ( app.js ) ist als monolithisches, globales Skript aufgebaut und greift direkt beim
+          │ Laden auf DOM-Elemente ( document.getElementById ) zu. Ein isolierter Unit-Test von z. B.  fmtDate
+          │ oder  escapeHtml  ist in Node.js ohne JSDOM-Mocking unmöglich.
+   57
+   58     ### Empfohlene Refactoring-Schritte
+   59
+   60     1. Modularisierung des Frontends (Separation of Concerns):
+   61         • Extrahiere die reinen Logik- und Hilfsfunktionen in eine separate Datei  src/frontend/utils.js
+   62         :
+>  63           export function fmtDate(iso) { ... }
+ 64           export function safeText(s) { ... }
+   65           export function escapeHtml(str) { ... }
+   66
+   67         • Dies erlaubt direkte Unit-Tests dieser reinen Funktionen in Jest mit 100% Ausführungsgarantie,
+              ohne DOM-Mocks.
+   68     2. Kapselung des API-Clients:
+   69         • Lagere API-Aufrufe in ein eigenes Service-Modul ( apiClient.js ) aus. Dies erlaubt einfaches
+              Mocken der Netzwerkschnittstelle im UI-Test.
+   70     3. Backend-Validierungs-Middleware:
+   71         • Nutze Bibliotheken wie  joi  oder  express-validator  im Express-Router, um ungültige Requests
+              (z. B. leere Titel oder negative Mengen) bereits auf HTTP-Ebene abzufangen, bevor sie die
+              Datenbank berühren.
+   72
+   73     ──────
+   75     ## 🎯 4. Teststrategie
+   76
+   77     Um eine hohe Testabdeckung und Zuverlässigkeit zu garantieren, wurde ein dreistufiger Testansatz
+          implementiert:
+   78
+  80                         /\
+   81                        /  \      E2E-Tests (Playwright) - Verifizieren die UI
+   82                       / E2E\     und die Integration beider Komponenten.
+   83                      /------\
+   84                     / Integr \   Integrationstests (Jest & Supertest) - Prüfen
+   85                    /  ation   \  Routen, Datenbankzugriffe und Middleware.
+   86                   /------------\
+   87                  /  Unit-Tests  \  Unit-Tests (Jest) - Testen einzelne Funktionen,
+   88                 /________________\ Instanziierungen und Schema-Zuordnungen.
+   90
+   91     1. Unit-Tests (Datenbank & Modelle):
+   92         • Isolation der SQLite-Datenbank im Arbeitsspeicher ( :memory: ).
+   93         • Testen der Schema-Generierung, der Tabellen-Verknüpfungen und der Datenbank-Seed-Logik unter
+              kontrollierten Bedingungen.
+   94     2. Integrationstests (REST API):
+   95         • Vollständige Integration von Express und Sequelize.
+   96         • HTTP-Requests via  supertest  an die Express-App.
+   97         • Abdeckung von Standardfällen (200, 204), Randfällen (leere Payloads) und Fehlerfällen (404 Not
+              Found).
+>  98     3. End-to-End-Tests (System- & UI-Ebene):
+   99         • Playwright steuert einen echten Chromium-Browser.
+  100         • Automatischer Server-Start im Test-Kontext über Playwrights  webServer .
+  101         • Zustandsfreie E2E-Szenarien, bei denen erzeugte Testdaten am Ende wieder gelöscht werden, um
+              Seiteneffekte auszuschließen.
+  102     4. Performance-/Load-Tests (Stresstest):
+  103         • Programmatische Lasttests mit  autocannon  zur Identifikation von Performance-Flaschenhälsen
+              (Durchsatz & Latenz).
+  104
+  105     ──────
+  107     ## 📊 5. Testfall-Matrix & Status
+  108
+  109      ID     │ Test-Katego… │ Komponente        │ Beschreibung          │ Erwartetes Ergebnis   │ Status
+          ────────┼──────────────┼───────────────────┼───────────────────────┼───────────────────────┼────────
+  111      UT-01  │ Unit-Test    │ Sequelize Setup   │  createSequelize  mit │ Sequelize Instanz im  │ PASSED
+                  │              │                   │ Memory-Option         │ Memory-Modus          │
+                  │              │                   │ erzeugen.             │ erstellt.             │
+  112      UT-02  │ Unit-Test    │ Sequelize Setup   │  createSequelize  mit │ Ordner wird erstellt, │ PASSED
+                  │              │                   │ Dateipfad erzeugen.   │ Instanz verweist auf  │
+                  │              │                   │                       │ Datei.                │
+> 113      UT-03  │ Unit-Test    │ Models            │  defineModels         │  Wishlist.hasMany(Wish│ PASSED
+               │              │                   │ Assoziationen prüfen. │ )  und                │
+                  │              │                   │                       │ Wish.belongsTo        │
+                  │              │                   │                       │ aktiv.                │
+  114      UT-04  │ Unit-Test    │ DB                │  initializeDatabase   │ Initialer Wishlist-   │ PASSED
+                  │              │ Initialisierung   │ mit  seed: true  bei  │ Seed angelegt.        │
+                  │              │                   │ leerer DB.            │                       │
+  115      UT-05  │ Unit-Test    │ DB                │  initializeDatabase   │ Keine Testdaten in DB │ PASSED
+                  │              │ Initialisierung   │ mit  seed: false .    │ angelegt.             │
+  116      UT-06  │ Unit-Test    │ DB                │  initializeDatabase   │ Kein doppelter Seed   │ PASSED
+                  │              │ Initialisierung   │ mit  seed: true  bei  │ angelegt (Schutz).    │
+                  │              │                   │ gefüllter DB.         │                       │
+  117      IT-01  │ Integration  │  POST /wishlist   │ Erstellen einer       │ 200 OK, Objekt mit ID │ PASSED
+                  │              │                   │ Wunschliste mit       │ zurückgeliefert.      │
+                  │              │                   │ Titel.                │                       │
+  118      IT-02  │ Integration  │  POST /wishlist   │ Erstellen einer       │ 200 OK, Titel ist     │ PASSED
+                  │              │                   │ Wunschliste ohne      │ undefined .           │
+                  │              │                   │ Titel.                │                       │
+> 119      IT-03  │ Integration  │  GET /wishlist    │ Abrufen aller         │ 200 OK, Array von     │ PASSED
+                  │              │                   │ Wunschlisten.         │ Wunschlisten inkl.    │
+                  │              │                   │                       │ Wünschen.             │
+  120      IT-04  │ Integration  │  GET              │ Abrufen einer         │ 200 OK, Wunschliste   │ PASSED
+                  │              │ /wishlist/:id     │ existierenden ID.     │ zurückgeliefert.      │
+  121      IT-05  │ Integration  │  GET              │ Abrufen einer nicht   │ 200 OK, liefert  null │ PASSED
+                  │              │ /wishlist/:id     │ existierenden ID.     │ zurück.               │
+  122      IT-06  │ Integration  │  PUT              │ Ändern des            │ 200 OK, Titel in der  │ PASSED
+                  │              │ /wishlist/:id     │ Wunschlisten-Titels.  │ DB aktualisiert.      │
+  123      IT-07  │ Integration  │  PUT              │ Ändern bei nicht      │ 404 Not Found,        │ PASSED
+                  │              │ /wishlist/:id     │ existierender ID.     │ Fehlermeldung im      │
+                  │              │                   │                       │ JSON.                 │
+> 124      IT-08  │ Integration  │  DELETE           │ Löschen einer         │ 204 No Content, aus   │ PASSED
+ 125      IT-09  │ Integration  │  POST             │ Wunsch an Wunschliste │ 200 OK, Wunsch in DB  │ PASSED
+                  │              │ /wishlist/:id/wis │ anhängen.             │ eingetragen,          │
+                  │              │ h                 │                       │ verknüpft.            │
+  126      IT-10  │ Integration  │  POST             │ Wunsch an ungültige   │ 404 Not Found.        │ PASSED
+                  │              │ /wishlist/:id/wis │ Liste hängen.         │                       │
+                  │              │ h                 │                       │                       │
+  127      IT-11  │ Integration  │  PUT /wish/:id    │ Aktualisieren eines   │ 200 OK, geänderte     │ PASSED
+                  │              │                   │ Wunschs (Titel,       │ Menge in DB           │
+                  │              │                   │ Menge).               │ vorhanden.            │
+  128      IT-12  │ Integration  │  PUT /wish/:id    │ Aktualisieren eines   │ 404 Not Found.        │ PASSED
+                  │              │                   │ ungültigen Wunschs.   │                       │
+  129      IT-13  │ Integration  │  DELETE /wish/:id │ Löschen eines         │ 204 No Content.       │ PASSED
+                  │              │                   │ Wunsches.             │                       │
+  130      E2E-01 │ End-to-End   │ UI / Stats        │ Laden der Seite und   │ Titel "WishBox" und   │ PASSED
+                  │              │                   │ Prüfung der Seed-     │ geladene Seed-Werte   │
+                  │              │                   │ Statistiken.          │ sichtbar.             │
+  131      E2E-02 │ End-to-End   │ UI / Create       │ Neue Wunschliste      │ Dialog öffnet sich,   │ PASSED
+                  │              │                   │ anlegen und Details   │ neue Liste wird       │
+                  │              │                   │ automatisch öffnen.   │ eingetragen.          │
+> 132      E2E-03 │ End-to-End   │ UI / Filter       │ Filtern der           │ Nur zutreffende       │ PASSED
+ 133      E2E-04 │ End-to-End   │ UI / Wishes       │ Wünsche in Detail-    │ Wünsche werden        │ PASSED
+                  │              │                   │ Dialog hinzufügen und │ korrekt aktualisiert  │
+                  │              │                   │ bearbeiten.           │ und gelöscht.         │
+  134      E2E-05 │ End-to-End   │ UI / Delete       │ Wunschliste löschen & │ Liste verschwindet    │ PASSED
+                  │              │                   │ umbenennen über       │ nach Bestätigung aus  │
+                  │              │                   │ Listen-Ansicht.       │ UI.                   │
+  135      LT-01  │ Load Test    │ API Performance   │ 10 parallele User     │ > 2000                │ PASSED
+                  │              │                   │ rufen 5 Sekunden lang │ Requests/Sekunde, < 5 │
+                  │              │                   │ GET /wishlist .       │ ms avg Latency.       │
+          ──────
+  139     ## 🚀 6. Ausführen der Tests
+  140
+  141     │ [!NOTE]
+  142     │ Alle Befehle müssen im Verzeichnis  src/backend  ausgeführt werden.
+  143
+  145       cd src/backend
+  147
+  148     ### 1. Unit & Integration Tests (Jest & Supertest)
+
+> 149     Startet Jest und führt alle 25 Backend-Tests aus (E2E-Tests werden ignoriert):
+  151       npm test
+  153
+  154     ### 2. End-to-End Tests (Playwright)
+
+  155     Startet den Test-Server im Hintergrund und führt die 5 E2E-Szenarien im headless Chromium-Browser
+          aus:
+  156
+  157       npm run test:e2e
+  159
+  160     ### 3. Lasttests (Autocannon)
+
+  161     Startet eine eigene Express-Instanz im Arbeitsspeicher auf Port 3001 und führt 5 Sekunden lang einen
+          API-Stresstest durch:
+  162
+  163       npm run test:load

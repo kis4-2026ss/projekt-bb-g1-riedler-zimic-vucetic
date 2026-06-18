@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathIgnorePatterns=e2e",
+    "test:e2e": "npx playwright test",
+    "test:load": "node load-test.mjs"
   },
   "author": "",
   "license": "MIT",
@@ -14,5 +17,11 @@
     "express": "^4.21.1",
     "sequelize": "^6.37.5",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "autocannon": "^8.0.0",
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
   }
 }
