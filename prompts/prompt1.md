@@ -1,0 +1,1 @@
+Generiere eine Testsuite für das Projekt, das in src liegt.
